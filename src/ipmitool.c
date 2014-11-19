@@ -65,6 +65,7 @@
 #include <ipmitool/ipmi_ekanalyzer.h>
 #include <ipmitool/ipmi_ime.h>
 #include <ipmitool/ipmi_dcmi.h>
+#include <ipmitool/ipmi_tpoem.h>
 
 #ifdef HAVE_CONFIG_H
 # include <config.h>
@@ -110,6 +111,7 @@ struct ipmi_cmd ipmitool_cmd_list[] = {
 	{ ipmi_fwum_main,    "fwum",	"Update IPMC using Kontron OEM Firmware Update Manager" },
 	{ ipmi_firewall_main,"firewall","Configure Firmware Firewall" },
 	{ ipmi_delloem_main, "delloem", "OEM Commands for Dell systems" },
+	{ ipmi_tpoem_main, "tpoem", "OEM Commands for T-Platforms systems"},
 #ifdef HAVE_READLINE
 	{ ipmi_shell_main,   "shell",   "Launch interactive IPMI shell" },
 #endif
