@@ -61,6 +61,10 @@
 
 #define IPMI_TPLOEM_FW_STATUS 0x88    /* Cmd to get firmware update status */
 
+#define IPMI_TPLOEM_FW_START 0x87     /* Cmd to start firmware update process */
+#define IPMI_TPLOEM_FW_CONF_PRES 1    /* Preserve configuration */
+#define IPMI_TPLOEM_FW_CONF_CLR  0    /* Do not preserve configuration */
+
 typedef enum {
     no_action,      /* No action */
     par_check_progress, /* Parameter check in progress */
@@ -68,7 +72,7 @@ typedef enum {
     par_check_fail,     /* Parameter check failed */
     img_dwn_progress,   /* Image download in progress */
     img_dwn_success,    /* Image download succeed */
-    img_dwn_fail,       /* Image download filed */
+    img_dwn_fail,       /* Image download failed */
     reserved,       /* Reserved :)  */
     img_flash_progress, /* Image flash in Progress */
     img_flash_success,  /* Image flash succeed */
@@ -85,7 +89,7 @@ const char *tploem_fwupdate_status_str[14] = {
         "Parameter check failed\0",
         "Image download in progress\0",
         "Image download succeed\0",
-        "Image download filed\0",
+        "Image download failed\0",
         "Reserved :)\0",
         "Image flash in Progress\0",
         "Image flash succeed\0",
@@ -135,7 +139,7 @@ static void ipmi_tploem_fwupdate_usage(void)
 }
 
 /*
- * ipmi_tploem_fwupdate_set_transporti()
+ * ipmi_tploem_fwupdate_set_transport()
  * Sets transport protocol to download firmware image.
  * 
  * @intf: pointer a ipmi interface
@@ -461,7 +465,6 @@ ipmi_tploem_fwupdate_get_type(struct ipmi_intf * intf, uint8_t * type)
  * Gets the current firmware update status.
  * 
  * @intf: pointer a ipmi interface
- * @retry: pointer to retry count to be stored
  *
  * Returns 0 on success or -1 is case of a failure
 */
@@ -490,11 +493,48 @@ ipmi_tploem_fwupdate_get_status(struct ipmi_intf * intf)
     status = rsp->data[0];
     if (status == par_check_progress || status == img_dwn_progress ||
         status == img_flash_progress || status == img_ver_progress) {
-        lprintf(LOG_NOTICE, "%s: %d done.", tploem_fwupdate_status_str[status],
+        lprintf(LOG_NOTICE, "%s: %d%% done.", tploem_fwupdate_status_str[status],
                         rsp->data[1]);
     }
     else {
         lprintf(LOG_NOTICE, "%s.", tploem_fwupdate_status_str[status]);
+    }
+
+    return 0;
+}
+
+/*
+ * ipmi_tploem_fwupdate_start
+ * Starts firmware update process.
+ * 
+ * @intf: pointer a ipmi interface
+ * @config: Do preserve configuration or not
+ *          Use IPMI_TPLOEM_FW_CONF_CLR or IPMI_TPLOEM_FW_CONF_PRES constants.
+ *
+ * Returns 0 on success or -1 is case of a failure
+*/
+static int
+ipmi_tploem_fwupdate_start(struct ipmi_intf * intf, int8_t config)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t data[2];
+    
+    data[0] = 0;
+    data[1] = config;
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = IPMI_TPLOEM_FW_START;
+    req.msg.data = data;
+    req.msg.data_len = 2;
+
+    rsp = intf->sendrecv(intf, &req);
+
+
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM start firmware update command failed");
+        return -1;
     }
 
     return 0;
@@ -649,9 +689,25 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
 
              return 0;
 
-        } else if (argc == 2 && !strncmp(argv[1], "status", 5)) {
+        } else if (argc == 2 && !strncmp(argv[1], "status", 6)) {
                 if(ipmi_tploem_fwupdate_get_status(intf)) return -1;
                 return 0;
+
+        } else if (argc >= 2 && !strncmp(argv[1], "start", 5)) {
+            uint8_t config = IPMI_TPLOEM_FW_CONF_CLR;
+
+            if(argc == 3) {
+                if(!strncmp(argv[2], "preserve-config=yes", 19))
+                        config = IPMI_TPLOEM_FW_CONF_PRES;
+                else if(!strncmp(argv[2], "preserve-config=no", 18))
+                        config = IPMI_TPLOEM_FW_CONF_CLR;
+                else {
+                    ipmi_tploem_fwupdate_usage();
+                }
+            }
+
+            if(ipmi_tploem_fwupdate_start(intf, config)) return -1;
+            return 0;
 
         } else {
              ipmi_tploem_fwupdate_usage();
