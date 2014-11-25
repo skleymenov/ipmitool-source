@@ -351,27 +351,35 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
         }
     } else if (!strncmp(argv[0], "fwupdate", 8)) {
         if (argc == 4 && !strncmp(argv[1], "set", 3)) {
-                if (!strncmp(argv[2], "transport", 9)) {
-                        uint8_t transport;
-                        if (!strncmp(argv[3], "http", 4) || !strncmp(argv[3], "HTTP", 4) ||
-                            !strncmp(argv[3], "https", 5) || !strncmp(argv[3], "HTTPS", 5) ||
-                            !strncmp(argv[3], "HTTPs", 5)) {
-                            transport = IPMI_TPLOEM_FW_TRANS_HTTP;
-                            if(ipmi_tploem_fwupdate_set_transport(intf, transport)) return -1;
-                            return 0;
-                        } else if (!strncmp(argv[3], "tftp", 4) || !strncmp(argv[3], "TFTP", 4)) {
-                            transport = IPMI_TPLOEM_FW_TRANS_TFTP;
-                            if(ipmi_tploem_fwupdate_set_transport(intf, transport)) return -1;
-                            return 0;
-                        } else {
-                            lprintf(LOG_NOTICE, "Tranport protocol %s does not supported", argv[3]);
-                            ipmi_tploem_fwupdate_usage();
-                            return 0;
-                        }
-                } else if (!strncmp(argv[2], "server-ip", 9)) {
-                        if(ipmi_tploem_fwupdate_set_serverip(intf, argv[3])) return -1;
+            if (!strncmp(argv[2], "transport", 9)) {
+                uint8_t transport;
+                if (!strncmp(argv[3], "http", 4) ||!strncmp(argv[3], "HTTP", 4) ||
+                    !strncmp(argv[3], "https", 5) || !strncmp(argv[3], "HTTPS", 5) ||
+                    !strncmp(argv[3], "HTTPs", 5)) {
+                    transport = IPMI_TPLOEM_FW_TRANS_HTTP;
+                    if(ipmi_tploem_fwupdate_set_transport(intf, transport)) return -1;
+                    return 0;
+                } else if (!strncmp(argv[3], "tftp", 4) || !strncmp(argv[3], "TFTP", 4)) {
+                    transport = IPMI_TPLOEM_FW_TRANS_TFTP;
+                    if(ipmi_tploem_fwupdate_set_transport(intf, transport)) return -1;
+                    return 0;
+                } else {
+                    lprintf(LOG_NOTICE, "Tranport protocol %s does not supported", argv[3]);
+                    ipmi_tploem_fwupdate_usage();
+                    return 0;
                 }
-         } else if (argc == 2 && !strncmp(argv[1], "info", 4)) {
+            } else if (!strncmp(argv[2], "server-ip", 9)) {
+                if(ipmi_tploem_fwupdate_set_serverip(intf, argv[3])) return -1;
+                return 0;
+            } else if (!strncmp(argv[2], "filename", 8)) {
+                if(ipmi_tploem_fwupdate_set_filename(intf, argv[3])) return -1;
+                return 0;
+            } else {
+                lprintf(LOG_NOTICE, "Unknown fwupdate parameter %s", argv[2]);
+                ipmi_tploem_fwupdate_usage();
+                return 0;
+            }
+        } else if (argc == 2 && !strncmp(argv[1], "info", 4)) {
              char * serverip = malloc(200);
              char * filename = malloc(200);
              
@@ -381,22 +389,17 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
              if(ipmi_tploem_fwupdate_get_filename(intf, filename)) return -1;
 
 
-             lprintf(LOG_NOTICE, "Firmware update parameters:");
-             lprintf(LOG_NOTICE, "Transport protocol: UNKNOWN");
-             lprintf(LOG_NOTICE, "Server IP address: %s", serverip);
-             lprintf(LOG_NOTICE, "Image filename: %s", filename);
-             lprintf(LOG_NOTICE, "Max. retry count: UNKNOWN");
-             lprintf(LOG_NOTICE, "Firmware type: UNKNOWN");
+             lprintf(LOG_NOTICE, "Transport protocol\t\t: UNKNOWN");
+             lprintf(LOG_NOTICE, "Server IP address\t\t: %s", serverip);
+             lprintf(LOG_NOTICE, "Image filename\t\t\t: %s", filename);
+             lprintf(LOG_NOTICE, "Max. retry count\t\t: UNKNOWN");
+             lprintf(LOG_NOTICE, "Firmware type\t\t\t: UNKNOWN");
 
              return 0;
          } else {
              ipmi_tploem_fwupdate_usage();
              return 0;
          }
-
-
-
-
     }
 
     return 0;
