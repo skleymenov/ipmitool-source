@@ -48,12 +48,12 @@
 #define IPMI_TPLOEM_FW_TRANS_TFTP 1   /* TFTP transport protocol type */
 
 #define IPMI_TPLOEM_FW_GET 0x8a       /* Cmd to get a fwupdate parameter */
-#define IPMI_TPLOEM_FW_SET 0x89        /* Cmd to set a fwupdate parameter */
+#define IPMI_TPLOEM_FW_SET 0x89       /* Cmd to set a fwupdate parameter */
 
-#define IPMI_TPLOEM_FW_IP 1          /* Server IP address. Data length: 200 byte.
-                                        String in ASCII HEX, zero byte terminated */
-#define IPMI_TPLOEM_FW_FILE 2         /* Firmware file name. Data length: 200 byte.
-                                        String in ASCII HEX, zero byte terminated */
+#define IPMI_TPLOEM_FW_IP 1      /* Server IP address. Data length: 200 byte.
+                                    String in ASCII HEX, zero byte terminated */
+#define IPMI_TPLOEM_FW_FILE 2    /* Firmware file name. Data length: 200 byte.
+                                    String in ASCII HEX, zero byte terminated */
 #define IPMI_TPLOEM_FW_RETRY 3        /* Download firmware file retry count */
 #define IPMI_TPLOEM_FW_TYPE 4         /* Firmware type. */
 #define IPMI_TPLOEM_FW_BMC 0          /* BMC firmware type. */
@@ -194,7 +194,8 @@ static int ipmi_tploem_fwupdate_set_serverip(struct ipmi_intf * intf, char * ip)
  *
  * Returns 0 on success or -1 in case of a failure.
  */
-static int ipmi_tploem_fwupdate_get_serverip(struct ipmi_intf * intf, char * buf)
+static int
+ipmi_tploem_fwupdate_get_serverip(struct ipmi_intf * intf, char * buf)
 {
     struct ipmi_rs * rsp;
     struct ipmi_rq req;
@@ -227,7 +228,8 @@ static int ipmi_tploem_fwupdate_get_serverip(struct ipmi_intf * intf, char * buf
  *
  * Returns 0 on success or -1 in case of a failure.
  */
-static int ipmi_tploem_fwupdate_set_filename(struct ipmi_intf * intf, char * filename)
+static int
+ipmi_tploem_fwupdate_set_filename(struct ipmi_intf * intf, char * filename)
 {
     struct ipmi_rs *rsp;
     struct ipmi_rq req;
@@ -284,6 +286,79 @@ static int ipmi_tploem_fwupdate_get_filename(struct ipmi_intf * intf, char * buf
     }
 
     strcpy(buf,rsp->data);
+
+    return 0;
+}
+
+/*
+ * ipmi_tploem_fwupdate_set_retry()
+ * Sets retry count for downloading the firmware image.
+ * 
+ * @intf: pointer a ipmi interface
+ * @retry: retry count
+ *
+ * Returns 0 on success or -1 is case of a failure
+*/
+static int
+ipmi_tploem_fwupdate_set_retry(struct ipmi_intf * intf, uint8_t retry)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t data[2];
+
+    data[0] = IPMI_TPLOEM_FW_RETRY;
+    data[1] = retry;
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = IPMI_TPLOEM_FW_SET;
+    req.msg.data = data;
+    req.msg.data_len = 2;
+
+    rsp = intf->sendrecv(intf, &req);
+
+
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM set firmware udate retry count command failed");
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * ipmi_tploem_fwupdate_get_retry()
+ * Getss retry count for downloading the firmware image.
+ * 
+ * @intf: pointer a ipmi interface
+ * @retry: pointer to retry count to be stored
+ *
+ * Returns 0 on success or -1 is case of a failure
+*/
+static int
+ipmi_tploem_fwupdate_get_retry(struct ipmi_intf * intf, uint8_t * retry)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t data;
+
+    data = IPMI_TPLOEM_FW_RETRY;
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = IPMI_TPLOEM_FW_GET;
+    req.msg.data = &data;
+    req.msg.data_len = 1;
+
+    rsp = intf->sendrecv(intf, &req);
+
+
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM get firmware udate retry count command failed");
+        return -1;
+    }
+
+    *retry = rsp->data[0];
 
     return 0;
 }
@@ -348,6 +423,7 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
             if (ipmi_tploem_lom_mac(intf, prt)) return -1;
         } else {
             ipmi_tploem_usage();
+            return -1;
         }
     } else if (!strncmp(argv[0], "fwupdate", 8)) {
         if (argc == 4 && !strncmp(argv[1], "set", 3)) {
@@ -359,40 +435,59 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
                     transport = IPMI_TPLOEM_FW_TRANS_HTTP;
                     if(ipmi_tploem_fwupdate_set_transport(intf, transport)) return -1;
                     return 0;
+
                 } else if (!strncmp(argv[3], "tftp", 4) || !strncmp(argv[3], "TFTP", 4)) {
                     transport = IPMI_TPLOEM_FW_TRANS_TFTP;
                     if(ipmi_tploem_fwupdate_set_transport(intf, transport)) return -1;
                     return 0;
+
                 } else {
                     lprintf(LOG_NOTICE, "Tranport protocol %s does not supported", argv[3]);
                     ipmi_tploem_fwupdate_usage();
-                    return 0;
+                    return -1;
+
                 }
             } else if (!strncmp(argv[2], "server-ip", 9)) {
                 if(ipmi_tploem_fwupdate_set_serverip(intf, argv[3])) return -1;
                 return 0;
+
             } else if (!strncmp(argv[2], "filename", 8)) {
                 if(ipmi_tploem_fwupdate_set_filename(intf, argv[3])) return -1;
                 return 0;
+
+            } else if (!strncmp(argv[2], "retry", 5)) {
+                    uint8_t retry=0;
+                    if(str2uchar(argv[3], &retry)) {
+                        lprintf(LOG_NOTICE, "Specify a valid retry count");
+                        ipmi_tploem_fwupdate_usage();
+                        return -1;
+                    }
+
+                    if(ipmi_tploem_fwupdate_set_retry(intf, retry)) return -1;
+                    return 0;
+
             } else {
                 lprintf(LOG_NOTICE, "Unknown fwupdate parameter %s", argv[2]);
                 ipmi_tploem_fwupdate_usage();
                 return 0;
+
             }
         } else if (argc == 2 && !strncmp(argv[1], "info", 4)) {
              char * serverip = malloc(200);
              char * filename = malloc(200);
+             uint8_t retry;
              
              if(serverip == NULL || filename == NULL) return -1;
 
              if(ipmi_tploem_fwupdate_get_serverip(intf, serverip)) return -1;
              if(ipmi_tploem_fwupdate_get_filename(intf, filename)) return -1;
+             if(ipmi_tploem_fwupdate_get_retry(intf, &retry)) return -1;
 
 
              lprintf(LOG_NOTICE, "Transport protocol\t\t: UNKNOWN");
              lprintf(LOG_NOTICE, "Server IP address\t\t: %s", serverip);
              lprintf(LOG_NOTICE, "Image filename\t\t\t: %s", filename);
-             lprintf(LOG_NOTICE, "Max. retry count\t\t: UNKNOWN");
+             lprintf(LOG_NOTICE, "Max. retry count\t\t: %d", retry);
              lprintf(LOG_NOTICE, "Firmware type\t\t\t: UNKNOWN");
 
              return 0;
