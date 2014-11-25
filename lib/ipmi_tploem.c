@@ -1,12 +1,11 @@
+/******************************************************************************/
 /*
  *  Copyright (c) 2014 T-Platforms, JSC. All Rights Reserved.
  *
  */
 
-
 #include <stdlib.h>
 #include <stdio.h>
-
 
 #include <ipmitool/ipmi.h>
 #include <ipmitool/ipmi_intf.h>
@@ -15,66 +14,292 @@
 #include <ipmitool/ipmi_raw.h>
 #include <ipmitool/ipmi_strings.h>
 #include <ipmitool/ipmi_channel.h>
-#include <ipmitool/ipmi_tpoem.h>
+#include <ipmitool/ipmi_tploem.h>
+
+#define IPMI_TPLOEM_FW 0x32           /* NetFn for firmware update procedures */
+
+#define IPMI_TPLOEM_FW_SET_TRANS 0x8b /* Cmd to set transport protocol type */
+#define IPMI_TPLOEM_FW_TRANS_HTTP 0   /* HTTP transport protocol type */
+#define IPMI_TPLOEM_FW_TRANS_TFTP 1   /* TFTP transport protocol type */
+
+#define IPMI_TPLOEM_FW_GET 0x8a       /* Cmd to get a fwupdate parameter */
+#define IPMI_TPOME_FW_SET 0x89       /* Cmd to set a fwupdate parameter */
+
+#define IPMI_TPLOEM_FW_SIP 1          /* Server IP address. Data length: 200 byte.
+                                        String in ASCII HEX, zero byte terminated */
+#define IPMI_TPLOEM_FW_FILE 2         /* Firmware file name. Data length: 200 byte.
+                                        String in ASCII HEX, zero byte terminated */
+#define IPMI_TPLOEM_FW_RETRY 3        /* Download firmware file retry count */
+#define IPMI_TPLOEM_FW_TYPE 4         /* Firmware type. */
+#define IPMI_TPLOEM_FW_BMC 0          /* BMC firmware type. */
+#define IPMI_TPLOEM_FW_BIOS 1         /* BIOS firmware type */
 
 
+typedef enum {
+    no_action,      /* No action */
+    par_check_progress, /* Parameter check in progress */
+    par_check_success,  /* Parameter check succeed */
+    par_check_fail,     /* Parameter check failed */
+    img_dwn_progress,   /* Image download in progress */
+    img_dwn_success,    /* Image download succeed */
+    img_dwn_fail,       /* Image download filed */
+    reserved,       /* Reserved :)  */
+    img_flash_progress, /* Image flash in Progress */
+    img_flash_success,  /* Image flash succeed */
+    img_flash_fail,     /* Image flash failed */
+    img_ver_progress,   /* Image verification in progress */
+    img_ver_success,    /* Image verification succeed */
+    img_ver_fail        /* Image verification failed */
+} tploem_fwupdate_status;
 
-static void ipmi_tpoem_usage(void) {
-	lprintf(LOG_NOTICE, "usage tpoem <command> [option...]");
-	lprintf(LOG_NOTICE, "");
-	lprintf(LOG_NOTICE, "lom mac <port>");
-	lprintf(LOG_NOTICE, "");
-}
-
-static int ipmi_tpoem_lom_mac(struct ipmi_intf * intf, uint8_t port)
+static void ipmi_tploem_usage(void)
 {
-	struct ipmi_rs * rsp;
-	struct ipmi_rq req;
-	uint8_t data[2];
-
-	if ( port > 2 || port < 1 ) {
-		lprintf(LOG_NOTICE, "Invalid port number: %d. Should be 1 or 2", port);
-		return -1;
-	}
-
-	data[0] = port;
-	data[1] = 1;
-	req.msg.netfn = 0x3a;
-	req.msg.cmd = 0x44;
-	req.msg.data = data;
-	req.msg.data_len = 2;
-
-	rsp = intf->sendrecv(intf, &req);
-	if (rsp == NULL) {
-		lprintf(LOG_NOTICE, "T-Platforms OEM get lom mac command failed");
-		return -1;
-	}
-
-	lprintf(LOG_NOTICE, "%02X:%02X:%02X:%02X:%02X:%02X", rsp->data[0], rsp->data[1], rsp->data[2], rsp->data[3], rsp->data[4], rsp->data[5]);
-	return 0;
+    lprintf(LOG_NOTICE, "Usage: tploem <command> [option...]");
+    lprintf(LOG_NOTICE, "");
+    lprintf(LOG_NOTICE, "Commands:");
+    lprintf(LOG_NOTICE, "   - lom mac [port]");
+    lprintf(LOG_NOTICE, "      Get LOM (Lan-On-Mainboard) MAC address.");
+    lprintf(LOG_NOTICE, "      Optional [port] value specifies the LOM port number (1 or 2).");
+    lprintf(LOG_NOTICE, "   - fwupdate <subcommand> [option...]");
+    lprintf(LOG_NOTICE, "      Firmware update group of commands. Use \"fwupdate help\" to get more info.");
+    lprintf(LOG_NOTICE, "");
 }
 
-int ipmi_tpoem_main(struct ipmi_intf * intf, int argc, char ** argv) {
-
-	int rc = (-1);
-
-	if (argc == 0 || strncmp(argv[0], "help", 4) == 0) {
-		ipmi_tpoem_usage();
-		return 0;
-	}
-
-	if (strncmp(argv[0], "lom", 3) ==0) {
-		if (argc == 3 && strncmp(argv[1], "mac", 3) == 0) {
-			uint8_t prt = 0;
-			if(str2uchar(argv[2], &prt) != 0 ) {
-				lprintf(LOG_ERR, "Port number must be specified: 1 or 2");
-				return -1;
-			}
-
-			rc = ipmi_tpoem_lom_mac(intf, prt);
-		}
-	}
-
-	return rc;
+static void ipmi_tploem_fw_usage(void)
+{
+    lprintf(LOG_NOTICE, "Usage: tploem fwupdate <subcommand> [option...]");
+    lprintf(LOG_NOTICE, "");
+    lprintf(LOG_NOTICE, "Subcommands:");
+    lprintf(LOG_NOTICE, "   - info");
+    lprintf(LOG_NOTICE, "      Get firmware update configuration summary");
+    lprintf(LOG_NOTICE, "      - set <option> <value>");
+    lprintf(LOG_NOTICE, "         Set firmware update configuration. Valid options are:");
+    lprintf(LOG_NOTICE, "      - transport <http|tftp>");
+    lprintf(LOG_NOTICE, "         Set transport protocol to download firmware image.");
+    lprintf(LOG_NOTICE, "         Supported protocols are http and tftp.");
+    lprintf(LOG_NOTICE, "      - server-ip <ip>");
+    lprintf(LOG_NOTICE, "         Set the server IP address to download firmware image from.");
+    lprintf(LOG_NOTICE, "      - filename <name>");
+    lprintf(LOG_NOTICE, "         Set firmware image filename and path on the server.");
+    lprintf(LOG_NOTICE, "      - retry <count>");
+    lprintf(LOG_NOTICE, "         Set retry count for downloading the firmware image.");
+    lprintf(LOG_NOTICE, "         Default is 0.");
+    lprintf(LOG_NOTICE, "      - type <bios|bmc>");
+    lprintf(LOG_NOTICE, "         Set the firmware type to update. Valid values are bios and bmc.");
+    lprintf(LOG_NOTICE, "   - status");
+    lprintf(LOG_NOTICE, "      Get the current firmware update status.");
+    lprintf(LOG_NOTICE, "");
 }
 
+static int ipmi_tploem_fwupdate_set_transport(struct ipmi_intf *intf,
+                                             uint8_t trans)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+
+    req.msg.netfn = 0x32;   //IPMI_TPLOEM_FW;
+    req.msg.cmd = 0x8b; //IPMI_TPLOEM_FW_SET_TRANS;
+    req.msg.data = &trans;
+    req.msg.data_len = 1;
+
+    rsp = intf->sendrecv(intf, &req);
+    lprintf(LOG_NOTICE, "ccode %X", rsp->ccode);
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM set firmware udate transport protocol \
+                                                               command failed");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int
+ipmi_tploem_fwupdate_set_serverip(struct ipmi_intf *intf, char *url)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t *data;
+    int i;
+
+    data = malloc(201);
+    if (data == NULL)
+        return -1;
+    data[0] = 1;
+    strncpy(data + 1, url, 201);
+
+    for (i = 0; i < 201; i++)
+        printf("%X ", data[i]);
+    lprintf(LOG_NOTICE, "");
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = 0x89;
+    req.msg.data = data;
+    req.msg.data_len = 201;
+
+    rsp = intf->sendrecv(intf, &req);
+    lprintf(LOG_NOTICE, "ccode %X", rsp->ccode);
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM set firmware udate url command failed");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int
+ipmi_tploem_fwupdate_get_serverip(struct ipmi_intf *intf)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    int i = 1;
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = 0x8a;
+    req.msg.data = &i;
+    req.msg.data_len = 1;
+
+    rsp = intf->sendrecv(intf, &req);
+    lprintf(LOG_NOTICE, "ccode %X", rsp->ccode);
+
+    lprintf(LOG_NOTICE, "%s", rsp->data);
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM set firmware udate url command failed");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int
+ipmi_tploem_fwupdate_get_filename(struct ipmi_intf *intf)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t i = 2;
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = 0x8a;
+    req.msg.data = &i;
+    req.msg.data_len = 1;
+
+    rsp = intf->sendrecv(intf, &req);
+    lprintf(LOG_NOTICE, "ccode %X", rsp->ccode);
+
+    lprintf(LOG_NOTICE, "%s", rsp->data);
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM set firmware udate url command failed");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int ipmi_tploem_fwupdate_get_status(struct ipmi_intf * intf)
+{
+    struct ipmi_rs * rsp;
+    struct ipmi_req req;
+    int rc;
+
+    req.msg.netfn = 
+
+}
+
+        
+static int
+ipmi_tploem_lom_mac(struct ipmi_intf *intf, uint8_t port)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t data[2];
+
+    if (port > 2 || port < 1) {
+        lprintf(LOG_NOTICE, "Invalid port number: %d. Should be 1 or 2",
+            port);
+        return -1;
+    }
+
+    data[0] = port;
+    data[1] = 1;
+    req.msg.netfn = 0x3a;
+    req.msg.cmd = 0x44;
+    req.msg.data = data;
+    req.msg.data_len = 2;
+
+    rsp = intf->sendrecv(intf, &req);
+    if (rsp == NULL) {
+        lprintf(LOG_NOTICE,
+            "T-Platforms OEM get lom mac command failed");
+        return -1;
+    }
+
+    lprintf(LOG_NOTICE, "%02X:%02X:%02X:%02X:%02X:%02X", rsp->data[0],
+        rsp->data[1], rsp->data[2], rsp->data[3], rsp->data[4],
+        rsp->data[5]);
+    return 0;
+}
+
+int
+ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
+{
+
+    int rc = (-1);
+
+    if (argc == 0 || strncmp(argv[0], "help", 4) == 0) {
+        ipmi_tploem_usage();
+        return 0;
+    }
+
+    if (strncmp(argv[0], "lom", 3) == 0) {
+        if (argc == 3 && strncmp(argv[1], "mac", 3) == 0) {
+            uint8_t prt = 0;
+            if (str2uchar(argv[2], &prt) != 0) {
+                lprintf(LOG_ERR,
+                    "Port number must be specified: 1 or 2");
+                return -1;
+            }
+
+            rc = ipmi_tploem_lom_mac(intf, prt);
+        }
+    } else if (strncmp(argv[0], "fwupdate", 8) == 0) {
+        lprintf(LOG_NOTICE, "fwupdate");
+        if (argc > 1) {
+            lprintf(LOG_NOTICE, "4 args");
+            if (strncmp(argv[1], "set", 3) == 0) {
+                lprintf(LOG_NOTICE, "set");
+                if (strncmp(argv[2], "transport", 9) == 0) {
+                    lprintf(LOG_NOTICE, "transport");
+                    uint8_t transport;
+                    if (strncmp(argv[3], "http", 4) == 0) {
+                        transport = 0;
+                        lprintf(LOG_NOTICE, "http");
+                        rc = ipmi_tploem_fwupdate_set_transport(intf, transport);
+                    } else if (strncmp(argv[3], "tftp", 4)
+                           == 0) {
+                        transport = 1;
+                        lprintf(LOG_NOTICE, "tftp");
+                        rc = ipmi_tploem_fwupdate_set_transport(intf, transport);
+                    } else {
+                        lprintf(LOG_NOTICE,
+                            "Unknown tranport protocol");
+                        return -1;
+                    }
+                } else if (strncmp(argv[2], "server-ip", 9) ==
+                       0) {
+                    lprintf(LOG_NOTICE, "server-ip");
+                    rc = ipmi_tploem_fwupdate_set_serverip
+                        (intf, argv[3]);
+                    rc = ipmi_tploem_fwupdate_get_serverip
+                        (intf);
+                    rc = ipmi_tploem_fwupdate_get_filename
+                        (intf);
+                }
+            }
+        }
+    }
+
+    return rc;
+}
