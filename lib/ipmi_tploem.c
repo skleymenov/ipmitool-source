@@ -59,6 +59,8 @@
 #define IPMI_TPLOEM_FW_BMC 0          /* BMC firmware type. */
 #define IPMI_TPLOEM_FW_BIOS 1         /* BIOS firmware type */
 
+#define IPMI_TPLOEM_FW_STATUS 0x88    /* Cmd to get firmware update status */
+
 typedef enum {
     no_action,      /* No action */
     par_check_progress, /* Parameter check in progress */
@@ -75,6 +77,23 @@ typedef enum {
     img_ver_success,    /* Image verification succeed */
     img_ver_fail        /* Image verification failed */
 } tploem_fwupdate_status;
+
+const char *tploem_fwupdate_status_str[14] = {
+        "No action\0",
+        "Parameter check in progress\0",
+        "Parameter check succeed\0",
+        "Parameter check failed\0",
+        "Image download in progress\0",
+        "Image download succeed\0",
+        "Image download filed\0",
+        "Reserved :)\0",
+        "Image flash in Progress\0",
+        "Image flash succeed\0",
+        "Image flash failed\0",
+        "Image verification in progress\0",
+        "Image verification succeed\0",
+        "Image verification failed\0"
+};
 
 static void ipmi_tploem_usage(void)
 {
@@ -363,6 +382,124 @@ ipmi_tploem_fwupdate_get_retry(struct ipmi_intf * intf, uint8_t * retry)
     return 0;
 }
 
+/*
+ * ipmi_tploem_fwupdate_set_type()
+ * Sets the firmware type to update.
+ * Valid values are IPMI_TPLOEM_FW_BIOS and IPMI_TPLOEM_FW_BMC.
+ * 
+ * @intf: pointer a ipmi interface
+ * @type: firmware type
+ *
+ * Returns 0 on success or -1 is case of a failure
+*/
+static int
+ipmi_tploem_fwupdate_set_type(struct ipmi_intf * intf, uint8_t type)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t data[2];
+
+    data[0] = IPMI_TPLOEM_FW_TYPE;
+    data[1] = type;
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = IPMI_TPLOEM_FW_SET;
+    req.msg.data = data;
+    req.msg.data_len = 2;
+
+    rsp = intf->sendrecv(intf, &req);
+
+
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM set firmware type command failed");
+        return -1;
+    }
+
+    return 0;
+}
+
+/*
+ * ipmi_tploem_fwupdate_get_type()
+ * Gets the firmware type to update.
+ * 
+ * @intf: pointer a ipmi interface
+ * @retry: pointer to type to be stored
+ *
+ * Returns 0 on success or -1 is case of a failure
+*/
+static int
+ipmi_tploem_fwupdate_get_type(struct ipmi_intf * intf, uint8_t * type)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t data;
+
+    data = IPMI_TPLOEM_FW_TYPE;
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = IPMI_TPLOEM_FW_GET;
+    req.msg.data = &data;
+    req.msg.data_len = 1;
+
+    rsp = intf->sendrecv(intf, &req);
+
+
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM get firmware type command failed");
+        return -1;
+    }
+
+    *type = rsp->data[0];
+
+    return 0;
+}
+
+/*
+ * ipmi_tploem_fwupdate_get_status()
+ * Gets the current firmware update status.
+ * 
+ * @intf: pointer a ipmi interface
+ * @retry: pointer to retry count to be stored
+ *
+ * Returns 0 on success or -1 is case of a failure
+*/
+static int
+ipmi_tploem_fwupdate_get_status(struct ipmi_intf * intf)
+{
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    tploem_fwupdate_status status;
+    uint8_t data = 0;
+
+    req.msg.netfn = IPMI_TPLOEM_FW;
+    req.msg.cmd = IPMI_TPLOEM_FW_STATUS;
+    req.msg.data = &data;
+    req.msg.data_len = 0;
+
+    rsp = intf->sendrecv(intf, &req);
+
+
+    if (rsp == NULL || rsp->ccode > 0) {
+        lprintf(LOG_NOTICE,
+            "T-platforms OEM get firmware udate status command failed");
+        return -1;
+    }
+
+    status = rsp->data[0];
+    if (status == par_check_progress || status == img_dwn_progress ||
+        status == img_flash_progress || status == img_ver_progress) {
+        lprintf(LOG_NOTICE, "%s: %d done.", tploem_fwupdate_status_str[status],
+                        rsp->data[1]);
+    }
+    else {
+        lprintf(LOG_NOTICE, "%s.", tploem_fwupdate_status_str[status]);
+    }
+
+    return 0;
+}
+
 static int ipmi_tploem_lom_mac(struct ipmi_intf *intf, uint8_t port)
 {
     struct ipmi_rs *rsp;
@@ -456,15 +593,29 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
                 return 0;
 
             } else if (!strncmp(argv[2], "retry", 5)) {
-                    uint8_t retry=0;
-                    if(str2uchar(argv[3], &retry)) {
-                        lprintf(LOG_NOTICE, "Specify a valid retry count");
-                        ipmi_tploem_fwupdate_usage();
-                        return -1;
-                    }
+                uint8_t retry=0;
+                if(str2uchar(argv[3], &retry)) {
+                    lprintf(LOG_NOTICE, "Specify a valid retry count");
+                    ipmi_tploem_fwupdate_usage();
+                    return -1;
+                }
 
-                    if(ipmi_tploem_fwupdate_set_retry(intf, retry)) return -1;
-                    return 0;
+                if(ipmi_tploem_fwupdate_set_retry(intf, retry)) return -1;
+                return 0;
+            } else if (!strncmp(argv[2], "type", 4)) {
+                uint8_t type;
+                if(!strncmp(argv[3], "bios", 4) || !strncmp(argv[3], "BIOS", 4))
+                    type = IPMI_TPLOEM_FW_BIOS;
+                else if (!strncmp(argv[3], "bmc", 3) || !strncmp(argv[3], "BMC", 3))
+                    type = IPMI_TPLOEM_FW_BMC;
+                else {
+                    lprintf(LOG_NOTICE, "Unknown firmware type %s", argv[3]);
+                    ipmi_tploem_fwupdate_usage();
+                    return -1;
+                }
+
+                if(ipmi_tploem_fwupdate_set_type(intf, type)) return -1;
+                return 0;
 
             } else {
                 lprintf(LOG_NOTICE, "Unknown fwupdate parameter %s", argv[2]);
@@ -476,25 +627,36 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
              char * serverip = malloc(200);
              char * filename = malloc(200);
              uint8_t retry;
+             uint8_t type;
+             char * type_str;
              
              if(serverip == NULL || filename == NULL) return -1;
 
              if(ipmi_tploem_fwupdate_get_serverip(intf, serverip)) return -1;
              if(ipmi_tploem_fwupdate_get_filename(intf, filename)) return -1;
              if(ipmi_tploem_fwupdate_get_retry(intf, &retry)) return -1;
+             if(ipmi_tploem_fwupdate_get_type(intf, &type)) return -1;
+
+             if(type == IPMI_TPLOEM_FW_BIOS) type_str = "bios\0";
+             else if(type == IPMI_TPLOEM_FW_BMC) type_str = "bmc\0";
 
 
              lprintf(LOG_NOTICE, "Transport protocol\t\t: UNKNOWN");
              lprintf(LOG_NOTICE, "Server IP address\t\t: %s", serverip);
              lprintf(LOG_NOTICE, "Image filename\t\t\t: %s", filename);
              lprintf(LOG_NOTICE, "Max. retry count\t\t: %d", retry);
-             lprintf(LOG_NOTICE, "Firmware type\t\t\t: UNKNOWN");
+             lprintf(LOG_NOTICE, "Firmware type\t\t\t: %s", type_str);
 
              return 0;
-         } else {
+
+        } else if (argc == 2 && !strncmp(argv[1], "status", 5)) {
+                if(ipmi_tploem_fwupdate_get_status(intf)) return -1;
+                return 0;
+
+        } else {
              ipmi_tploem_fwupdate_usage();
              return 0;
-         }
+        }
     }
 
     return 0;
