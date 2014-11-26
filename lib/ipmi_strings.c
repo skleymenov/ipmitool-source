@@ -68,6 +68,7 @@ const struct valstr ipmi_oem_info[] = {
    { IPMI_OEM_BULL,                   "Bull Company" },
    { IPMI_OEM_PPS,                    "Pigeon Point Systems" },
    { IPMI_OEM_BROADCOM,               "Broadcom Corporation" },
+   { IPMI_OEM_TPLATFORMS,             "T-Platforms" },
    { 0xffff , NULL },
 };
 
@@ -115,6 +116,9 @@ const struct oemvalstr ipmi_oem_product_info[] = {
    { IPMI_OEM_KONTRON,5303, "AT8901" },
    /* Broadcom */
    { IPMI_OEM_BROADCOM, 5725, "BCM5725" },
+   /* T-Platforms */
+   { IPMI_OEM_TPLATFORMS, 0x0210, "V210" },
+   { IPMI_OEM_TPLATFORMS, 0x0200, "V200" },
 
    { 0xffffff        , 0xffff , NULL },
  };
