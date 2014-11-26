@@ -262,7 +262,7 @@ ipmi_tploem_fwupdate_set_filename(struct ipmi_intf * intf, char * filename)
     if (data == NULL)
         return -1;
     data[0] = IPMI_TPLOEM_FW_FILE;
-    strncpy(data + 1, filename, 201);
+    strncpy(data + 1, filename, 200);
 
     req.msg.netfn = IPMI_TPLOEM_FW;
     req.msg.cmd = IPMI_TPLOEM_FW_SET;
