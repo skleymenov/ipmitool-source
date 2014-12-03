@@ -305,6 +305,7 @@ Commands:
         spd          Print SPD info from remote I2C device
         sunoem       Manage Sun OEM Extensions
         tsol         Configure and connect Tyan IPMIv1.5 Serial\-over\-LAN
+        tploem       Manage T-Platforms OEM Extensions
         user         Configure Management Controller users
 
 .TP 
@@ -3123,6 +3124,52 @@ Feature identifiers:
 \fISUPPORTS_SIGNED_PACKAGES\fP
 .br
 \fIREQUIRES_SIGNED_PACKAGES\fP
+.RE
+.RE
+.RE
+.TP
+\fItploem\fP
+.RS
+.TP
+\fIfwupdate\fP
+.RS
+
+This commands provides a uniform way to update fiwmware.
+.TP
+\fIinfo\fP 
+.RS
+Get firmware update configuration summary.
+.TP
+\fIset\fP <\fBoption\fR> <\fBvalue\fR>
+.RS
+
+Set firmware update configuration. Valid options are:
+.br
+\fItransport\fP        Set transport protocol to download firmware image.
+Supported protocols are \fIhttp\fP and \fItftp\fP.
+.br
+\fIserver-ip\fP        Set the server IP address to download firmware image from.
+.br
+\fIfilename\fP         Set firmware image filename and path on the server.
+.br
+\fIretry\fP            Set retry count for downloading the firmware image. Default is 0.
+.br
+\fItype\fP             Set the firmware type to update. Valid values are \fIbios\fP and \fIbmc\fP.
+.RE
+.RE
+.TP
+\fIstart\fP [\fBpreserve-config=<\fIyes\fP|\fIno\fP>\fR]
+.RS
+
+Begin firmware update procedure.
+If optional parameter \fBpreserve-config\fR is \fIyes\fR, then configuration of the firmware
+will be preserved during firmware update procedure. Default is \fIno\fR.
+.RE
+.TP
+\fIstatus\fP
+.RS
+
+Get the current firmware update status.
 .RE
 .RE
 .RE
