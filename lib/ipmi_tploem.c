@@ -540,7 +540,7 @@ ipmi_tploem_fwupdate_start(struct ipmi_intf * intf, int8_t config)
     return 0;
 }
 
-static int ipmi_tploem_lom_mac(struct ipmi_intf *intf, uint8_t port)
+static int ipmi_tploem_lom_mac(struct ipmi_intf *intf, uint8_t port, char * buf)
 {
     struct ipmi_rs *rsp;
     struct ipmi_rq req;
@@ -566,7 +566,7 @@ static int ipmi_tploem_lom_mac(struct ipmi_intf *intf, uint8_t port)
         return -1;
     }
 
-    lprintf(LOG_NOTICE, "%02X:%02X:%02X:%02X:%02X:%02X", rsp->data[0],
+    sprintf(buf, "%02X:%02X:%02X:%02X:%02X:%02X", rsp->data[0],
         rsp->data[1], rsp->data[2], rsp->data[3], rsp->data[4],
         rsp->data[5]);
     return 0;
@@ -583,6 +583,7 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
     }
 
     if (!strncmp(argv[0], "lom", 3)) {
+        char mac[18];
         if (argc == 3 && !strncmp(argv[1], "mac", 3)) {
             uint8_t prt = 0;
             if (str2uchar(argv[2], &prt)) {
@@ -591,13 +592,16 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
                 return -1;
             }
 
-            rc = ipmi_tploem_lom_mac(intf, prt);
+            rc = ipmi_tploem_lom_mac(intf, prt, mac);
+            if(!rc) lprintf(LOG_NOTICE, "%s", mac);
         
         } else if (argc == 2 && !strncmp(argv[1], "mac", 3)) {
             uint8_t prt = 1;
-            if (ipmi_tploem_lom_mac(intf, prt)) return -1;
+            if (ipmi_tploem_lom_mac(intf, prt, mac)) return -1;
+            lprintf(LOG_NOTICE, "Lan-On-Mainboard Port 1 MAC\t: %s", mac);
             prt = 2;
-            if (ipmi_tploem_lom_mac(intf, prt)) return -1;
+            if (ipmi_tploem_lom_mac(intf, prt, mac)) return -1;
+            lprintf(LOG_NOTICE, "Lan-On-Mainboard Port 2 MAC\t: %s", mac);
         } else {
             ipmi_tploem_usage();
             return -1;
