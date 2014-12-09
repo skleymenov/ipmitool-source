@@ -65,6 +65,13 @@
 #define IPMI_TPLOEM_FW_CONF_PRES 1    /* Preserve configuration */
 #define IPMI_TPLOEM_FW_CONF_CLR  0    /* Do not preserve configuration */
 
+#define IPMI_TPLOEM_INVENTORY 0x3a    /* Inventory NetFn */
+#define IPMI_TPLOEM_BIOS 0x40         /* BIOS Inventory command */
+#define IPMI_TPLOEM_BIOS_VND 0x00     /* BIOS Vendor */
+#define IPMI_TPLOEM_BIOS_VER 0x01     /* BIOS Version */
+#define IPMI_TPLOEM_BIOS_DATE 0x02    /* BIOS Build date */
+#define IPMI_TPLOEM_BIOS_ME 0x03      /* ME Version */
+
 typedef enum {
     no_action,      /* No action */
     par_check_progress, /* Parameter check in progress */
@@ -572,6 +579,34 @@ static int ipmi_tploem_lom_mac(struct ipmi_intf *intf, uint8_t port, char * buf)
     return 0;
 }
 
+/* 
+ *
+ *
+ */
+int ipmi_tploem_bios(struct ipmi_intf *intf, uint8_t what, char * buf)
+{
+
+    struct ipmi_rs *rsp;
+    struct ipmi_rq req;
+    uint8_t data = what;
+
+    req.msg.netfn = IPMI_TPLOEM_INVENTORY;
+    req.msg.cmd = IPMI_TPLOEM_BIOS;
+    req.msg.data = &data;
+    req.msg.data_len = 1;
+
+    rsp = intf->sendrecv(intf, &req);
+    if (rsp == NULL) {
+        lprintf(LOG_NOTICE,
+            "T-Platforms OEM get lom mac command failed");
+        return -1;
+    }
+
+    snprintf(buf, rsp->data_len + 1 , "%s", rsp->data);
+
+    return 0;
+}
+
 int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
 {
 
@@ -713,11 +748,39 @@ int ipmi_tploem_main(struct ipmi_intf *intf, int argc, char **argv)
             if(ipmi_tploem_fwupdate_start(intf, config)) return -1;
             return 0;
 
-        } else {
+        }
+    } else if (argc == 2 && !strncmp(argv[0], "bios", 4)) {
+                char * bbuf = malloc(200);
+                if( bbuf == NULL ) return -1;
+
+                if(!strncmp(argv[1], "vendor", 5)) {
+                        rc = ipmi_tploem_bios(intf, IPMI_TPLOEM_BIOS_VND, bbuf);
+                        lprintf(LOG_NOTICE,"%s", bbuf);
+                        return 0;
+
+                } else if (!strncmp(argv[1], "version", 7)) {
+                        rc = ipmi_tploem_bios(intf, IPMI_TPLOEM_BIOS_VER, bbuf);
+                        lprintf(LOG_NOTICE, "%s", bbuf);
+                } else if (!strncmp(argv[1], "date", 4)) {
+                        rc = ipmi_tploem_bios(intf, IPMI_TPLOEM_BIOS_DATE, bbuf);
+                        lprintf(LOG_NOTICE, "%s", bbuf);
+                } else if (!strncmp(argv[1], "me", 2)) {
+                        rc = ipmi_tploem_bios(intf, IPMI_TPLOEM_BIOS_ME, bbuf);
+                        lprintf(LOG_NOTICE, "%s", bbuf);
+                } else if (!strncmp(argv[1], "info", 4)) {
+                        rc = ipmi_tploem_bios(intf, IPMI_TPLOEM_BIOS_VND, bbuf);
+                        lprintf(LOG_NOTICE, "BIOS Vendor\t\t\t: %s", bbuf);
+                        rc = ipmi_tploem_bios(intf, IPMI_TPLOEM_BIOS_VER, bbuf);
+                        lprintf(LOG_NOTICE, "BIOS Version\t\t\t: %s", bbuf);
+                        rc = ipmi_tploem_bios(intf, IPMI_TPLOEM_BIOS_DATE, bbuf);
+                        lprintf(LOG_NOTICE, "BIOS Build Date\t\t\t: %s", bbuf);
+                        rc = ipmi_tploem_bios(intf, IPMI_TPLOEM_BIOS_ME, bbuf);
+                        lprintf(LOG_NOTICE, "ME Version\t\t\t: %s", bbuf);
+                }
+    } else {
              ipmi_tploem_fwupdate_usage();
              return 0;
         }
-    }
 
     return 0;
 }
